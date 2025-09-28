@@ -32,9 +32,10 @@ export default function DeployPage() {
       loadingScreen: {
         enabled: true,
         type: "percentage",
-        percentage: 0,
+        percentage: 20,
       },
       onlineMode: false,
+      onlinNeMode: false, // compatibility with user's curl example
     }
 
     const res = await fetch("/api/mc/deploy", {
@@ -50,7 +51,10 @@ export default function DeployPage() {
     }
 
     const data = await res.json()
-    if (!data?.serverId) {
+
+    // Accept alternate ID keys from upstream
+    const serverId = data?.serverId || data?.id || data?.server_id
+    if (!serverId) {
       toast.error("No serverId returned from deploy.")
       throw new Error("No serverId")
     }
@@ -58,10 +62,16 @@ export default function DeployPage() {
     // Store for later (e.g., recovery, manage page deep link)
     try {
       if (typeof window !== "undefined") {
-        sessionStorage.setItem("lastDeployedServerId", data.serverId)
-        if (data.progressUrl) sessionStorage.setItem(`dp:progressUrl:${data.serverId}`, String(data.progressUrl))
-        if (data.logsUrl) sessionStorage.setItem(`dp:logsUrl:${data.serverId}`, String(data.logsUrl))
-        if (data.commandUrl) sessionStorage.setItem(`dp:commandUrl:${data.serverId}`, String(data.commandUrl))
+        sessionStorage.setItem("lastDeployedServerId", serverId)
+
+        // Accept alternate progress URL keys from upstream
+        const progressUrl = data?.progressUrl || data?.progress_url || data?.progress
+        const logsUrl = data?.logsUrl || data?.logs_url || data?.logs
+        const commandUrl = data?.commandUrl || data?.command_url || data?.command
+
+        if (progressUrl) sessionStorage.setItem(`dp:progressUrl:${serverId}`, String(progressUrl))
+        if (logsUrl) sessionStorage.setItem(`dp:logsUrl:${serverId}`, String(logsUrl))
+        if (commandUrl) sessionStorage.setItem(`dp:commandUrl:${serverId}`, String(commandUrl))
       }
     } catch {
       /* ignore */
@@ -74,7 +84,7 @@ export default function DeployPage() {
     }).toString()
 
     // Go to loading screen
-    router.push(`/servers/${encodeURIComponent(data.serverId)}/deploying?${q}`)
+    router.push(`/servers/${encodeURIComponent(serverId)}/deploying?${q}`)
   }
 
   return (

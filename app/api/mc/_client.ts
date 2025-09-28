@@ -18,13 +18,29 @@ export async function upstream(path: string, init: RequestInit = {}) {
   if (!headers.has("Content-Type") && init.body) {
     headers.set("Content-Type", "application/json")
   }
-  // Ensure we don't cache control-plane calls
+  if (!headers.has("Accept")) {
+    headers.set("Accept", "application/json")
+  }
   const url = `${BASE}${path.startsWith("/") ? "" : "/"}${path}`
+
+  // Debug logs (visible in <v0_app_debug_logs>)
+  console.log("[v0] upstream request:", {
+    url,
+    method: init.method || "GET",
+  })
+
   const res = await fetch(url, {
     ...init,
     headers,
     cache: "no-store",
   })
+
+  console.log("[v0] upstream response:", {
+    url,
+    status: res.status,
+    ok: res.ok,
+  })
+
   return res
 }
 
