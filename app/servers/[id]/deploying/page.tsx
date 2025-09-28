@@ -5,8 +5,9 @@ import { useParams, useRouter, useSearchParams } from "next/navigation"
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
 import { motion } from "framer-motion"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { CheckCircle2 } from "lucide-react"
+import { toast } from "sonner"
 
 const fetcher = (url: string) =>
   fetch(url).then((r) => {
@@ -22,36 +23,69 @@ export default function DeployingPage() {
   const version = search.get("version") || undefined
   const name = search.get("name") || undefined
 
-  const { data, error } = useSWR<{ percent: number; message?: string; status?: string }>(
-    `/api/mc/servers/${id}/progress`,
-    fetcher,
-    { refreshInterval: 2500 }, // poll every ~2.5s
-  )
+  const { data, error, mutate } = useSWR<any>(`/api/mc/servers/${id}/progress`, fetcher, { refreshInterval: 2500 })
 
-  const targetPercent = Number(data?.percent ?? 0)
-  const apiStatus = data?.status
-  const message = data?.message ?? "Preparing your server..."
+  const rawPercent =
+    (typeof data?.percent === "number" && data?.percent) ??
+    (typeof data?.percentage === "number" && data?.percentage) ??
+    (typeof data?.progress === "number" && data?.progress) ??
+    (typeof data?.progressPercent === "number" && data?.progressPercent) ??
+    0
+
+  const apiStatus = (data?.status || data?.state || "").toString()
+  const upstreamMessage = (data?.message || data?.phase || data?.step || "") as string
 
   const [smoothPercent, setSmoothPercent] = useState(0)
   useEffect(() => {
-    if (targetPercent < smoothPercent) return
-    const step = () => {
+    if (rawPercent < smoothPercent) return
+    const t = setInterval(() => {
       setSmoothPercent((p) => {
-        if (p >= targetPercent) return p
-        const delta = Math.max(1, Math.round((targetPercent - p) * 0.2))
-        return Math.min(p + delta, targetPercent)
+        if (p >= rawPercent) return p
+        const delta = Math.max(1, Math.round((rawPercent - p) * 0.2))
+        return Math.min(p + delta, rawPercent)
       })
-    }
-    const t = setInterval(step, 80)
+    }, 80)
     return () => clearInterval(t)
-  }, [targetPercent, smoothPercent])
+  }, [rawPercent, smoothPercent])
 
-  const isDone = (apiStatus && apiStatus === "running") || targetPercent >= 100
+  const prettyMessage = useMemo(() => {
+    const pct = Math.round(smoothPercent)
+    if (upstreamMessage) return `${upstreamMessage} (${pct}%)`
+    if (pct < 15) return `Allocating port… (${pct}%)`
+    if (pct < 45) return `Downloading server files… (${pct}%)`
+    if (pct < 75) return `Installing server files… (${pct}%)`
+    if (pct < 95) return `Starting server… (${pct}%)`
+    return `Server is online! (${pct}%)`
+  }, [smoothPercent, upstreamMessage])
+
+  const isDone = (apiStatus && apiStatus === "running") || rawPercent >= 100
   useEffect(() => {
     if (!isDone) return
     const t = setTimeout(() => router.push("/dashboard"), 1200)
     return () => clearTimeout(t)
   }, [isDone, router])
+
+  const lastProgressRef = useRef<number>(Date.now())
+  const lastPctRef = useRef<number>(0)
+  useEffect(() => {
+    if (rawPercent > lastPctRef.current) {
+      lastPctRef.current = rawPercent
+      lastProgressRef.current = Date.now()
+    }
+  }, [rawPercent])
+
+  useEffect(() => {
+    const timeoutMs = 3 * 60 * 1000 // 3 minutes
+    const i = setInterval(() => {
+      if (isDone) return
+      const stalled = Date.now() - lastProgressRef.current > timeoutMs
+      if (stalled) {
+        toast.error("Deployment appears stalled. Please retry or cancel.")
+        clearInterval(i)
+      }
+    }, 5000)
+    return () => clearInterval(i)
+  }, [isDone])
 
   const label = useMemo(() => {
     if (distro && version) {
@@ -77,7 +111,12 @@ export default function DeployingPage() {
         ) : (
           <div className="space-y-3">
             <Progress value={Math.min(100, smoothPercent)} />
-            <div className="text-right text-sm text-muted-foreground">{Math.min(100, Math.round(smoothPercent))}%</div>
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-muted-foreground">{prettyMessage}</div>
+              <div className="text-right text-sm text-muted-foreground">
+                {Math.min(100, Math.round(smoothPercent))}%
+              </div>
+            </div>
           </div>
         )}
 
@@ -101,15 +140,27 @@ export default function DeployingPage() {
             />
           )}
 
-          {isDone ? (
-            <Button onClick={() => router.push("/dashboard")} className="bg-primary text-primary-foreground">
-              Go to Dashboard
-            </Button>
-          ) : (
-            <Button variant="outline" onClick={() => router.push("/dashboard")}>
-              Cancel
-            </Button>
-          )}
+          <div className="flex gap-2">
+            {!isDone ? (
+              <>
+                <Button variant="outline" onClick={() => router.push("/dashboard")}>
+                  Cancel
+                </Button>
+                <Button variant="outline" onClick={() => mutate()}>
+                  Retry
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button onClick={() => router.push("/dashboard")} className="bg-primary text-primary-foreground">
+                  Go to Dashboard
+                </Button>
+                <Button variant="outline" onClick={() => router.push(`/manage/${encodeURIComponent(String(id))}`)}>
+                  Manage Server
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>

@@ -55,6 +55,15 @@ export default function DeployPage() {
       throw new Error("No serverId")
     }
 
+    // Store for later (e.g., recovery, manage page deep link)
+    try {
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem("lastDeployedServerId", data.serverId)
+      }
+    } catch {
+      /* ignore */
+    }
+
     const q = new URLSearchParams({
       distro,
       version,
