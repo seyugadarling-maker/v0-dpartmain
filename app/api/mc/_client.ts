@@ -1,5 +1,8 @@
-const BASE = process.env.MC_API_BASE || "http://194.238.16.252:3000/api"
-const KEY = process.env.MC_API_KEY || "niggawhathappend87w3"
+const BASE = (process.env.MC_API_BASE || process.env.MC_BASE_URL || "http://194.238.16.252:3000/api").replace(
+  /\/+$/,
+  "",
+)
+const KEY = process.env.MC_API_KEY
 
 function assertKey() {
   if (!KEY) {
@@ -15,15 +18,17 @@ export async function upstream(path: string, init: RequestInit = {}) {
   if (!headers.has("Content-Type") && init.body) {
     headers.set("Content-Type", "application/json")
   }
-  const res = await fetch(`${BASE}${path}`, {
+  // Ensure we don't cache control-plane calls
+  const url = `${BASE}${path.startsWith("/") ? "" : "/"}${path}`
+  const res = await fetch(url, {
     ...init,
     headers,
-    // Ensure we don't cache control-plane calls
     cache: "no-store",
   })
   return res
 }
 
 export function upstreamUrl(path: string) {
-  return `${BASE}${path}`
+  // Normalize returned path
+  return `${BASE}${path.startsWith("/") ? "" : "/"}${path}`
 }

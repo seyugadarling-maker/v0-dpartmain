@@ -23,7 +23,36 @@ export default function DeployingPage() {
   const version = search.get("version") || undefined
   const name = search.get("name") || undefined
 
-  const { data, error, mutate } = useSWR<any>(`/api/mc/servers/${id}/progress`, fetcher, { refreshInterval: 2500 })
+  const [progressPath, setProgressPath] = useState<string>(`/api/mc/servers/${id}/progress`)
+  useEffect(() => {
+    try {
+      const key = `dp:progressUrl:${id}`
+      const stored = typeof window !== "undefined" ? sessionStorage.getItem(key) : null
+      if (stored) {
+        // Canonicalize to our internal proxy route
+        let path = stored
+        if (stored.startsWith("http")) {
+          try {
+            const u = new URL(stored)
+            path = u.pathname
+          } catch {
+            /* ignore */
+          }
+        }
+        if (path.startsWith("/api/servers/")) path = `/api/mc${path}` // proxy through our API
+        if (!path.startsWith("/api/mc/")) path = `/api/mc/servers/${id}/progress`
+        setProgressPath(path)
+      }
+    } catch {
+      // fall back to default
+    }
+  }, [id])
+
+  const { data, error, mutate } = useSWR<any>(progressPath, fetcher, { refreshInterval: 2500 })
+
+  useEffect(() => {
+    if (error) toast.error(error.message || "Failed to fetch deployment progress")
+  }, [error])
 
   const rawPercent =
     (typeof data?.percent === "number" && data?.percent) ??
@@ -51,12 +80,13 @@ export default function DeployingPage() {
   const prettyMessage = useMemo(() => {
     const pct = Math.round(smoothPercent)
     if (upstreamMessage) return `${upstreamMessage} (${pct}%)`
-    if (pct < 15) return `Allocating port… (${pct}%)`
-    if (pct < 45) return `Downloading server files… (${pct}%)`
-    if (pct < 75) return `Installing server files… (${pct}%)`
-    if (pct < 95) return `Starting server… (${pct}%)`
+    const labelDistro = distro ? (distro === "fabric" ? "Fabric" : distro[0].toUpperCase() + distro.slice(1)) : "Server"
+    if (pct <= 10) return `Allocating port… (${pct}%)`
+    if (pct <= 35) return `Downloading ${labelDistro}${version ? ` ${version}` : ""} server jar… (${pct}%)`
+    if (pct <= 70) return `Installing server files… (${pct}%)`
+    if (pct <= 95) return `Starting server… (${pct}%)`
     return `Server is online! (${pct}%)`
-  }, [smoothPercent, upstreamMessage])
+  }, [smoothPercent, upstreamMessage, distro, version])
 
   const isDone = (apiStatus && apiStatus === "running") || rawPercent >= 100
   useEffect(() => {

@@ -59,6 +59,9 @@ export default function DeployPage() {
     try {
       if (typeof window !== "undefined") {
         sessionStorage.setItem("lastDeployedServerId", data.serverId)
+        if (data.progressUrl) sessionStorage.setItem(`dp:progressUrl:${data.serverId}`, String(data.progressUrl))
+        if (data.logsUrl) sessionStorage.setItem(`dp:logsUrl:${data.serverId}`, String(data.logsUrl))
+        if (data.commandUrl) sessionStorage.setItem(`dp:commandUrl:${data.serverId}`, String(data.commandUrl))
       }
     } catch {
       /* ignore */
